@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZCode 会话清理</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- 顶栏 -->
+  <header class="titlebar">
+    <div class="title">
+      <span class="logo">Z</span> ZCode 会话清理
+    </div>
+    <div class="titlebar-actions">
+      <span id="running-pill" class="pill" title="ZCode 客户端运行状态">检测中…</span>
+      <button id="btn-theme" class="icon-btn" title="切换浅色 / 深色 / 跟随系统" aria-label="切换主题">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="8.5"/>
+          <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+      <button id="btn-backups" class="icon-btn" title="备份与恢复" aria-label="备份与恢复">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="4" rx="1"/>
+          <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/>
+          <path d="M10 12.5h4"/>
+        </svg>
+      </button>
+      <button id="btn-refresh" class="icon-btn" title="重新扫描" aria-label="重新扫描">↻</button>
+    </div>
+  </header>
+
+  <!-- 统计卡 -->
+  <section class="stats" id="stats">
+    <div class="stat-card"><span class="stat-icon">🗂️</span><div class="stat-num" id="st-total">–</div><div class="stat-label">全部会话</div></div>
+    <div class="stat-card"><span class="stat-icon">✅</span><div class="stat-num" id="st-active">–</div><div class="stat-label">活跃</div></div>
+    <div class="stat-card"><span class="stat-icon">📦</span><div class="stat-num" id="st-archived">–</div><div class="stat-label">归档</div></div>
+    <div class="stat-card"><span class="stat-icon">🗑️</span><div class="stat-num" id="st-deleted">–</div><div class="stat-label">界面已删<span class="hint">（数据仍在磁盘）</span></div></div>
+    <div class="stat-card"><span class="stat-icon">💾</span><div class="stat-num" id="st-size">–</div><div class="stat-label">文件占用</div></div>
+  </section>
+
+  <!-- 工具栏 -->
+  <section class="toolbar">
+    <div class="segmented" id="scope-seg">
+      <button data-scope="all" class="on" title="所有会话">全部</button>
+      <button data-scope="active" title="正常显示在客户端界面的会话">活跃</button>
+      <button data-scope="archived" title="客户端已归档的会话，数据仍在磁盘">归档</button>
+      <button data-scope="deleted" title="在客户端界面删除过的会话（软删除）——仅从界面隐藏，数据仍完整保留在磁盘，可放心彻底清除">已删</button>
+    </div>
+    <div class="quick-filters">
+      <span class="qf-label">快捷：</span>
+      <button class="chip" data-quick="completed">已完成</button>
+      <button class="chip" data-quick="error">已出错</button>
+      <button class="chip" data-quick="30d">30 天前</button>
+      <button class="chip clear" data-quick="" id="qf-clear" hidden>清除筛选 ✕</button>
+    </div>
+    <div class="grow"></div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="搜索标题 / 项目 / ID…" autocomplete="off">
+    </div>
+  </section>
+
+  <!-- 会话清单 -->
+  <main class="list-wrap">
+    <div class="list-head">
+      <label class="check-all"><input type="checkbox" id="check-all"> 全选</label>
+      <span class="list-summary" id="list-summary"></span>
+    </div>
+    <div class="legend">
+      <span class="legend-title">状态说明</span>
+      <span class="lg">无徽章 = 活跃，正常显示在客户端</span>
+      <span class="lg"><span class="badge completed">已完成</span>任务正常结束</span>
+      <span class="lg"><span class="badge error">已出错</span>任务以错误结束</span>
+      <span class="lg"><span class="badge archived">归档</span>客户端已归档，数据仍在磁盘</span>
+      <span class="lg"><span class="badge deleted">已删</span>客户端界面删过（仅隐藏，数据仍在磁盘）</span>
+      <span class="lg"><span class="badge using">使用中</span>最近 60 分钟活跃，已锁定防误删</span>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="empty" id="empty" hidden>
+      <div class="empty-icon">📭</div>
+      <div id="empty-text">没有符合条件的会话</div>
+    </div>
+  </main>
+
+  <!-- 底部操作栏 -->
+  <footer class="actionbar" id="actionbar" hidden>
+    <div class="sel-info">已选 <b id="sel-count">0</b> 项 · <b id="sel-size">0B</b> · <b id="sel-msgs">0</b> 条消息</div>
+    <div class="grow"></div>
+    <label class="opt"><input type="checkbox" id="opt-purge-cp"> 连带清理项目检查点</label>
+    <button class="btn ghost" id="btn-preview-sel">👁 预览所选</button>
+    <button class="btn danger" id="btn-delete">🗑️ 彻底删除</button>
+  </footer>
+
+  <!-- 预览弹窗 -->
+  <div class="modal" id="modal-preview" hidden>
+    <div class="modal-box preview-box">
+      <div class="modal-head">
+        <div class="modal-title" id="pv-title">会话预览</div>
+        <button class="icon-btn" data-close>✕</button>
+      </div>
+      <div class="modal-sub" id="pv-sub"></div>
+      <div class="chat" id="pv-chat"></div>
+    </div>
+  </div>
+
+  <!-- 删除确认 -->
+  <div class="modal" id="modal-confirm" hidden>
+    <div class="modal-box dialog-box">
+      <div class="modal-title">确认彻底删除？</div>
+      <div class="confirm-body" id="cf-body"></div>
+      <div class="warn" id="cf-running" hidden>⚠️ 检测到 ZCode 客户端正在运行，建议先完全退出再删除，避免客户端把内存数据写回。</div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn danger" id="cf-ok">我已确认，删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进度 -->
+  <div class="modal" id="modal-progress" hidden>
+    <div class="modal-box dialog-box center">
+      <div class="spinner"></div>
+      <div id="pg-text">正在删除…</div>
+    </div>
+  </div>
+
+  <!-- 删除报告 -->
+  <div class="modal" id="modal-report" hidden>
+    <div class="modal-box dialog-box">
+      <div class="modal-title">删除完成</div>
+      <div class="confirm-body" id="rp-body"></div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="rp-backups">查看备份</button>
+        <button class="btn primary" data-close>完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 备份管理 -->
+  <div class="modal" id="modal-backups" hidden>
+    <div class="modal-box dialog-box">
+      <div class="modal-title">备份与恢复</div>
+      <div class="modal-sub" id="bk-root"></div>
+      <div class="backup-list" id="bk-list"></div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
