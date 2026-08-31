@@ -283,19 +283,20 @@ def main():
     ap = argparse.ArgumentParser(description="ZCode 会话硬删除工具")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    def add_filters(p):
+    def add_filters(p, default_scope):
         p.add_argument("--scope", choices=["active", "archived", "deleted", "all"],
-                       default="active",
-                       help="作用域: active=活跃(默认) archived=仅归档 deleted=界面已删 all=全部")
+                       default=default_scope,
+                       help="作用域: active=活跃 archived=仅归档 deleted=界面已删 all=全部"
+                            f"（默认 {default_scope}）")
         p.add_argument("--project", help="按项目路径子串过滤（不区分大小写）")
         p.add_argument("--task", nargs="+", help="指定会话 ID（sess_xxx，支持前缀）")
         p.add_argument("--older-than", type=float, metavar="天", help="只处理 N 天前更新的")
         p.add_argument("--keep-recent", type=float, default=60, metavar="分钟",
                        help="跳过最近 N 分钟活跃的会话，防止误删正在使用的（默认 60，0 关闭）")
 
-    add_filters(sub.add_parser("list", help="列出会话"))
+    add_filters(sub.add_parser("list", help="列出会话"), default_scope="all")
     dp = sub.add_parser("delete", help="硬删除会话（默认 dry-run 预览）")
-    add_filters(dp)
+    add_filters(dp, default_scope="active")
     dp.add_argument("--export", metavar="目录", help="删除前把会话消息导出为 JSON")
     dp.add_argument("--purge-checkpoints", action="store_true",
                     help="项目任务清零时顺带删除该项目的检查点目录")

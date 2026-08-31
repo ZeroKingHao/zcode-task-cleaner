@@ -67,10 +67,10 @@ python zcode-task-cleaner.py delete --scope deleted --yes
 
 | 参数 | 说明 |
 |---|---|
-| `--scope active` | 只看活跃任务（**默认**） |
+| `--scope active` | 只看活跃任务（`delete` 的**默认**，保守起见只删活跃的） |
 | `--scope archived` | 只看归档任务 |
 | `--scope deleted` | 只看界面已删除（软删除）的任务 |
-| `--scope all` | 全部 |
+| `--scope all` | 全部（`list` 的**默认**，查看时给全貌） |
 | `--project <子串>` | 按项目路径过滤，不区分大小写，支持子串匹配 |
 | `--task <ID>...` | 精确指定会话 ID（`sess_xxx`，支持前缀，可多个；指定后忽略 scope） |
 | `--older-than <天>` | 只处理 N 天前更新的会话 |
