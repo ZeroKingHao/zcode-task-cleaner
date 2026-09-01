@@ -193,8 +193,8 @@ function renderList() {
 
   const totalMsgs = rows.reduce((a, s) => a + s.msgs, 0);
   const totalSize = rows.reduce((a, s) => a + s.size, 0);
-  $("#list-summary").textContent = rows.length
-    ? `${rows.length} 个会话 · ${totalMsgs} 条消息 · ${fmtSize(totalSize)}`
+  $("#list-summary").innerHTML = rows.length
+    ? `<b>${rows.length}</b> 个会话 · <b>${totalMsgs}</b> 条消息 · <b>${fmtSize(totalSize)}</b>`
     : "";
   $("#empty").hidden = rows.length > 0;
   if (!rows.length) {

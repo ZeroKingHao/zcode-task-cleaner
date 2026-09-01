@@ -29,6 +29,7 @@
     0 8px 32px rgba(17, 26, 48, .10),
     inset 0 1px 0 var(--glass-highlight),
     inset 0 -1px 0 rgba(17, 26, 48, .05);
+  --list-head-bg: rgba(255, 255, 255, .74);
 }
 html[data-theme="dark"] {
   --bg: #16161a;
@@ -56,6 +57,7 @@ html[data-theme="dark"] {
   --glass-shadow:
     0 10px 36px rgba(0, 0, 0, .40),
     inset 0 1px 0 var(--glass-highlight);
+  --list-head-bg: rgba(40, 40, 46, .82);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -246,7 +248,10 @@ html[data-theme="dark"] body::after {
   padding: 8px 18px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 2;
   border-radius: 18px 18px 0 0;
-  background: transparent;
+  /* sticky 头部必须有底，否则滚动时会话行从下面穿透重叠 */
+  background: var(--list-head-bg);
+  backdrop-filter: blur(18px) saturate(1.8);
+  -webkit-backdrop-filter: blur(18px) saturate(1.8);
 }
 .legend {
   display: flex; flex-wrap: wrap; align-items: center;
@@ -256,8 +261,9 @@ html[data-theme="dark"] body::after {
   font-size: 11.5px; color: var(--text-3);
   background: transparent;
 }
-.check-all { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.list-summary { font-size: 12px; color: var(--text-3); }
+.check-all { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.list-summary { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.list-summary b { color: var(--text); font-weight: 650; font-size: 13px; }
 .legend-title { font-weight: 700; color: var(--text-2); }
 .lg { display: inline-flex; align-items: center; gap: 5px; }
 .lg .badge { transform: scale(.92); transform-origin: center; }
