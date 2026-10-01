@@ -6,6 +6,8 @@ ZCode 客户端界面上的「删除」是软删除：只是打个标记把任�
 
 ## GUI
 
+双击 `启动GUI.bat`（Windows），或手动启动：
+
 ```bash
 python gui_server.py --open    # 打开 http://127.0.0.1:8765，--open 会自动拉起浏览器
 ```
