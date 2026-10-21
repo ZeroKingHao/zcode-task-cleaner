@@ -75,6 +75,9 @@
 
   --row-cols: 18px 36px minmax(0, 1fr) 58px 128px 86px 84px;
   --col-gap: 14px;
+  --toggle-size: 18px;
+  --toggle-gap: 7px;
+  --tree-indent: calc(var(--toggle-size) + var(--toggle-gap));
   --radius: 24px;
 }
 
@@ -1152,7 +1155,7 @@ input[type="checkbox"]:focus-visible {
 }
 
 .s-main { min-width: 0; padding-right: 2px; }
-.s-title-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.s-title-row { display: flex; align-items: center; gap: var(--toggle-gap); min-width: 0; }
 .s-title {
   font-size: 13.5px;
   font-weight: 600;
@@ -1167,6 +1170,7 @@ input[type="checkbox"]:focus-visible {
   align-items: center;
   gap: 6px;
   margin-top: 4px;
+  padding-left: var(--tree-indent);
   font-size: 11px;
   color: var(--text-3);
   white-space: nowrap;
@@ -1255,8 +1259,8 @@ input[type="checkbox"]:focus-visible {
 
 /* 子代理展开箭头 */
 .s-toggle {
-  width: 18px;
-  height: 18px;
+  width: var(--toggle-size);
+  height: var(--toggle-size);
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -2043,8 +2047,8 @@ details.reasoning .bubble {
   .c-msgs, .c-time,
   .th-sort[data-sort="msgs"], .th-sort[data-sort="updated_at"] { display: none; }
   .s-title-row { flex-wrap: wrap; row-gap: 4px; }
-  .s-title { flex: 1 1 calc(100% - 25px); }
-  .s-title-row .badge:first-of-type { margin-left: 25px; }
+  .s-title { flex: 1 1 calc(100% - var(--tree-indent)); }
+  .s-title-row .badge:first-of-type { margin-left: var(--tree-indent); }
   .btn-eye { width: 28px; height: 26px; padding: 0; }
   .btn-eye span { display: none; }
   .actionbar { padding: 8px; border-radius: 14px; gap: 8px; }
