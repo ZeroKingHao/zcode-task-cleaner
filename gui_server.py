@@ -435,6 +435,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._static("app.css", "text/css; charset=utf-8")
             elif path == "/app.js":
                 self._static("app.js", "application/javascript; charset=utf-8")
+            elif path.startswith("/fonts/"):
+                # 自托管展示字体：仅放行 fonts/ 下合法的 woff2 文件名
+                name = path[len("/fonts/"):]
+                if re.fullmatch(r"[A-Za-z0-9_.\-]+\.woff2", name) \
+                        and (GUI_DIR / "fonts" / name).is_file():
+                    self._static("fonts/" + name, "font/woff2")
+                else:
+                    self._send(404, {"error": "not found"})
             else:
                 self._send(404, {"error": "not found"})
         except BrokenPipeError:

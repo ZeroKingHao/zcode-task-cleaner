@@ -99,6 +99,18 @@ def build():
     CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, parent_id TEXT,
       task_type TEXT, time_updated INTEGER);
     """)
+    # 拟真对话文案：用户提需求 / 助手回应，多轮时交替推进（不用 [role] 假前缀）
+    ASKS = [
+        "请帮我处理这个任务，先看现状再动手。",
+        "进度如何？遇到阻塞就先停下来告诉我。",
+        "好，按这个方案继续，做完记得自测一遍。",
+    ]
+    REPLIES = [
+        "收到。我先梳理相关文件与上下文，再给出方案并执行。",
+        "方案已定，正在执行；目前没有阻塞，稍后汇报结果。",
+        "已完成并自测通过，变更点都列在总结里了。",
+    ]
+
     def insert_messages(sid, title, upd_off, nmsgs, tag):
         for i in range(nmsgs):
             role = "user" if i % 2 == 0 else "assistant"
@@ -106,10 +118,10 @@ def build():
             con.execute("INSERT INTO message VALUES (?,?,?,?,?,?)",
                         (mid, sid, NOW + upd_off + i * 1000, NOW + upd_off + i * 1000,
                          json.dumps({"role": role, "time": NOW + upd_off}), i))
+            text = (ASKS if role == "user" else REPLIES)[(i // 2) % 3]
             con.execute("INSERT INTO part VALUES (?,?,?,?,?,?,?)",
                         (f"part-{tag}-{i}-0", mid, sid, NOW, NOW,
-                         json.dumps({"type": "text",
-                                     "text": f"[{role}] {title} 第 {i + 1} 条消息：请帮我把侧边栏改成深色模式。"}), 0))
+                         json.dumps({"type": "text", "text": text}), 0))
             if role == "assistant":
                 con.execute("INSERT INTO part VALUES (?,?,?,?,?,?,?)",
                             (f"part-{tag}-{i}-1", mid, sid, NOW, NOW,

@@ -41,6 +41,7 @@ def main():
         page.goto(BASE)
         page.wait_for_load_state("networkidle")
         page.wait_for_selector(".session", timeout=8000)
+        page.wait_for_timeout(900)   # 等统计数字 count-up 动画结束
 
         # ---- 1. 扫描与统计 ----
         print("\n[1] 全量扫描与统计卡")
@@ -50,11 +51,16 @@ def main():
         check("统计卡-已删=1", page.text_content("#st-deleted").strip() == "1")
         check("列表渲染 5 行", page.locator(".session").count() == 5)
         check("客户端状态 pill", "客户端" in page.text_content("#running-pill"))
-        # 状态图例
-        legend = page.text_content(".legend")
-        check("图例-已删含义", "数据仍在磁盘" in legend)
-        check("图例-使用中含义", "锁定防误删" in legend)
-        check("图例-无徽章=活跃", "无徽章 = 活跃" in legend)
+        # 状态说明（已收进「?」帮助弹层）
+        page.click("#btn-help")
+        page.wait_for_selector("#modal-help:not([hidden])")
+        page.wait_for_timeout(300)
+        help_text = page.text_content("#modal-help")
+        check("图例-已删含义", "数据仍" in help_text and "已删" in help_text)
+        check("图例-使用中含义", "防误删" in help_text)
+        check("图例-无徽章=活跃", "无徽章" in help_text and "活跃会话" in help_text)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(200)
         check("徽章悬停提示", "软删除" in page.locator(".session .badge.deleted")
               .first.get_attribute("title"))
         check("作用域悬停提示", "软删除" in page.locator(
@@ -91,8 +97,7 @@ def main():
 
         # ---- 1c. 冻结窗格：下滑时「全选/摘要、使用说明、表头」三行整体吸顶 ----
         print("\n[1c] 冻结窗格")
-        check("头部三行结构", page.locator("#list-head .lh-tools").count() == 1
-              and page.locator("#list-head .legend").count() == 1
+        check("头部两行结构", page.locator("#list-head .lh-tools").count() == 1
               and page.locator("#list-head .lh-cols").count() == 1)
         page.set_viewport_size({"width": 1280, "height": 430})
         page.wait_for_timeout(200)
@@ -153,11 +158,11 @@ def main():
         page.wait_for_timeout(300)
         kids = page.locator(".session.child")
         check("展开后 3 个子代理行", kids.count() == 3)
-        check("子代理行显示 sessionId",
-              "sess_subagent_agent_11111111" in kids.first.text_content())
+        check("子代理行显示 sessionId（短形展示，全文在悬浮提示）",
+              "sess_subagent_agent_11111111" in kids.first.locator(".c-sid").get_attribute("title"))
         check("徽章区分子代理/工作流",
               "子代理" in kids.first.text_content()
-              and "工作流" in page.locator('.session.child', has_text="workflow").text_content())
+              and "工作流" in page.locator('.session.child', has_text="工作流").text_content())
         check("子代理行无复选框（随主会话删除）",
               kids.first.locator("input[type=checkbox]").count() == 0)
         # 列对齐：主行与子行的消息/更新/占用列 x 坐标必须完全一致（grid 同模板）
@@ -171,7 +176,7 @@ def main():
         check("子代理预览标题带主会话名",
               "子代理 · " in page.text_content("#pv-title")
               and "编写 PRD" in page.text_content("#pv-title"))
-        check("子代理预览有内容", "[user]" in page.text_content("#pv-chat"))
+        check("子代理预览有内容", "请帮我处理" in page.text_content("#pv-chat"))
         page.keyboard.press("Escape")
         page.wait_for_timeout(250)
         aa.locator(".s-toggle").click()
@@ -190,8 +195,8 @@ def main():
         page.wait_for_selector("#modal-preview:not([hidden])")
         page.wait_for_timeout(400)
         chat = page.text_content("#pv-chat")
-        check("预览含用户消息", "[user]" in chat)
-        check("预览含助手消息", "[assistant]" in chat)
+        check("预览含用户消息", "请帮我处理" in chat)
+        check("预览含助手消息", "收到" in chat)
         check("预览含思考过程折叠", "思考过程" in chat)
         page.screenshot(path=os.path.join(SHOTS, "02-preview.png"))
         page.keyboard.press("Escape")
@@ -248,7 +253,7 @@ def main():
         check("报告-2 个主会话成功", "成功 2 / 2" in body)
         check("报告-消息数 12（主 6 + 子代理 6）", "12 条消息" in body)
         check("报告-连带删除 3 个子代理", "连带删除子代理会话 3 个" in body)
-        check("报告-VACUUM 成功", body.count("✅") == 2)
+        check("报告-VACUUM 成功", page.locator("#rp-body .ic-check").count() == 2)
         check("报告-日志清洗", "抹除" in body)
         check("报告-含备份时间戳", re.search(r"备份：\d{8}-\d{6}", body) is not None)
         page.screenshot(path=os.path.join(SHOTS, "05-report.png"))
@@ -294,7 +299,7 @@ def main():
         items.first.locator("button").click()
         page.wait_for_timeout(1500)
         page.wait_for_selector("#modal-backups[hidden]", state="attached", timeout=10000)
-        page.wait_for_timeout(600)
+        page.wait_for_timeout(1000)   # 等 count-up 结束再读统计带
         check("恢复后回到 5 行", page.locator(".session").count() == 5)
         check("恢复后统计卡=5", page.text_content("#st-total").strip() == "5")
         scan = api("/api/scan")["sessions"]

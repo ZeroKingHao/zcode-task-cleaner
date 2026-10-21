@@ -17,6 +17,23 @@ const state = {
   sortDesc: true,
 };
 
+/* ---------- 单色线性图标（Lucide 风格，跟随文字颜色） ---------- */
+const ICONS = {
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  workflow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  "message-square": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  "triangle-alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+};
+function icon(name, size = 15, sw = 1.8) {
+  return `<svg class="ic ic-${name}" width="${size}" height="${size}" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round"
+    stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+}
+
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /* ---------- 工具 ---------- */
 function fmtSize(n) {
   if (n >= 1073741824) return (n / 1073741824).toFixed(2) + " GB";
@@ -36,6 +53,26 @@ function fmtTime(ms) {
 function esc(s) {
   return String(s).replace(/[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+/* 会话 ID 展示用短形：取 UUID 首段（11 11 1111-1111），无 UUID 则截前 10 位；全文放 title */
+function shortId(id) {
+  const m = String(id).match(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+  if (m) return m[0];
+  return id.length > 10 ? id.slice(0, 10) + "…" : id;
+}
+/* 数字载入滚动（尊重系统减弱动效设置） */
+function countUp(el, target, format) {
+  const finalText = format(target);
+  if (REDUCED || el._v === target) { el.textContent = finalText; return; }
+  el._v = target;
+  const t0 = performance.now(), dur = 620;
+  const step = (t) => {
+    const p = Math.min((t - t0) / dur, 1);
+    el.textContent = format(Math.round(target * (1 - Math.pow(1 - p, 3))));
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = finalText;
+  };
+  requestAnimationFrame(step);
 }
 function toast(msg, ms = 2600) {
   const el = $("#toast");
@@ -112,11 +149,11 @@ async function scan() {
 
 function renderStats() {
   const s = state.sessions;
-  $("#st-total").textContent = s.length;
-  $("#st-active").textContent = s.filter((x) => !x.archived && !x.deleted).length;
-  $("#st-archived").textContent = s.filter((x) => x.archived && !x.deleted).length;
-  $("#st-deleted").textContent = s.filter((x) => x.deleted).length;
-  $("#st-size").textContent = fmtSize(s.reduce((a, x) => a + x.size, 0));
+  countUp($("#st-total"), s.length, (n) => n);
+  countUp($("#st-active"), s.filter((x) => !x.archived && !x.deleted).length, (n) => n);
+  countUp($("#st-archived"), s.filter((x) => x.archived && !x.deleted).length, (n) => n);
+  countUp($("#st-deleted"), s.filter((x) => x.deleted).length, (n) => n);
+  countUp($("#st-size"), s.reduce((a, x) => a + x.size, 0), fmtSize);
 }
 
 function visibleSessions() {
@@ -164,8 +201,8 @@ function avatarHtml(project) {
 /* 子代理类型 → 图标 / 徽章 */
 function childMeta(c) {
   return c.type === "workflow_child"
-    ? { icon: "⚙️", label: "工作流" }
-    : { icon: "🤖", label: "子代理" };
+    ? { iconKey: "workflow", label: "工作流" }
+    : { iconKey: "bot", label: "子代理" };
 }
 
 const CHEVRON_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -216,12 +253,12 @@ function renderList() {
           <span class="s-title" title="${esc(s.title)}">${esc(s.title)}</span>
           ${badgeHtml(s)}
         </div>
-        <div class="s-sub">${esc(proj)} &nbsp;<span class="sid">${esc(s.id)}</span></div>
+        <div class="s-sub">${esc(proj)} &nbsp;<span class="sid" title="${esc(s.id)}">${esc(shortId(s.id))}</span></div>
       </div>
-      <div class="s-col"><div class="v">${s.msgs}</div><div class="k">消息</div></div>
-      <div class="s-col"><div class="v">${fmtTime(s.updated_at)}</div><div class="k">更新</div></div>
-      <div class="s-col"><div class="v">${fmtSize(s.size)}</div><div class="k">占用</div></div>
-      <button class="btn-eye" data-preview="${esc(s.id)}">👁 预览</button>`;
+      <div class="s-col n">${s.msgs}</div>
+      <div class="s-col t">${fmtTime(s.updated_at)}</div>
+      <div class="s-col n">${fmtSize(s.size)}</div>
+      <button class="btn-eye" data-preview="${esc(s.id)}">${icon("eye", 13)}<span>预览</span></button>`;
     el.querySelector("input").addEventListener("change", (e) => {
       e.target.checked ? state.selected.add(s.id) : state.selected.delete(s.id);
       renderActionbar();
@@ -241,18 +278,18 @@ function renderList() {
       cel.className = "session child";
       cel.innerHTML = `
         <span></span>
-        <span class="c-branch">└ ${meta.icon}</span>
+        <span class="c-branch">└ ${icon(meta.iconKey, 13)}</span>
         <div class="s-main">
           <div class="s-title-row">
             <span class="s-toggle placeholder"></span>
-            <span class="c-sid" title="${esc(c.id)}">${esc(c.id)}</span>
+            <span class="c-sid" title="${esc(c.id)}">${esc(shortId(c.id))}</span>
             <span class="badge child-badge" title="挂在主会话下，删除主会话时一并删除">${meta.label}</span>
           </div>
         </div>
-        <div class="s-col"><div class="v">${c.msgs}</div><div class="k">消息</div></div>
-        <div class="s-col"><div class="v">${fmtTime(c.updated_at)}</div><div class="k">更新</div></div>
-        <div class="s-col"><div class="v">${fmtSize(c.size)}</div><div class="k">占用</div></div>
-        <button class="btn-eye" data-preview="${esc(c.id)}">👁 预览</button>`;
+        <div class="s-col n">${c.msgs}</div>
+        <div class="s-col t">${fmtTime(c.updated_at)}</div>
+        <div class="s-col n">${fmtSize(c.size)}</div>
+        <button class="btn-eye" data-preview="${esc(c.id)}">${icon("eye", 13)}<span>预览</span></button>`;
       cel.querySelector(".btn-eye").addEventListener("click", () => openPreview(c.id));
       list.appendChild(cel);
     });
@@ -296,16 +333,16 @@ function findSession(id) {
 async function openPreview(id) {
   const s = findSession(id);
   $("#pv-title").textContent = s ? s.title : id;
-  $("#pv-sub").textContent = `${s ? s.project + " · " : ""}${id} · 加载中…`;
+  $("#pv-sub").textContent = `${s ? s.project + " · " : ""}${shortId(id)} · 加载中…`;
   $("#pv-chat").innerHTML = "";
   $("#modal-preview").hidden = false;
   try {
     const data = await api("/api/preview", { id });
     $("#pv-sub").textContent =
-      `${s ? s.project + " · " : ""}${id} · ${data.messages.length} 条消息`;
+      `${s ? s.project + " · " : ""}${shortId(id)} · ${data.messages.length} 条消息`;
     const chat = $("#pv-chat");
     if (!data.messages.length) {
-      chat.innerHTML = `<div class="empty"><div class="empty-icon">💬</div>
+      chat.innerHTML = `<div class="empty"><div class="empty-icon">${icon("message-square", 44, 1.5)}</div>
         <div>此会话没有文本消息（可能只有工具调用产物）</div></div>`;
       return;
     }
@@ -326,9 +363,9 @@ async function openPreview(id) {
       chat.appendChild(div);
     }
   } catch (e) {
-    $("#pv-sub").textContent = id;
+    $("#pv-sub").textContent = shortId(id);
     $("#pv-chat").innerHTML =
-      `<div class="empty"><div class="empty-icon">⚠️</div><div>加载失败：${esc(e.message)}</div></div>`;
+      `<div class="empty"><div class="empty-icon">${icon("triangle-alert", 44, 1.5)}</div><div>加载失败：${esc(e.message)}</div></div>`;
   }
 }
 
@@ -340,7 +377,7 @@ function renderBackupNote() {
     note.innerHTML = `将备份两个数据库到<br><b>${esc(state.backupRoot || "~/.zcode-cleaner-backup/")}</b>，可在「备份与恢复」中还原`;
   } else {
     note.classList.add("off");
-    note.innerHTML = "⚠️ 不备份直接删除：删除完成后无法通过备份恢复";
+    note.innerHTML = `${icon("triangle-alert", 13)} 不备份直接删除：删除完成后无法通过备份恢复`;
   }
 }
 
@@ -382,6 +419,7 @@ async function doDelete() {
     const okN = rep.results.filter((r) => r.ok && !r.child).length;
     const mainN = rep.results.filter((r) => !r.child).length;
     const kidN = rep.results.filter((r) => r.ok && r.child).length;
+    const OK = icon("check", 12), WARNI = icon("triangle-alert", 12);
     const lines = [
       `<span class="${rep.failed ? "report-fail" : "report-ok"}">
         成功 ${okN} / ${mainN}</span> 个会话，
@@ -390,8 +428,8 @@ async function doDelete() {
       rep.backup
         ? `备份：<b>${esc(rep.backup.ts)}</b>（可在「备份与恢复」中还原）`
         : `<span class="report-fail">本次未备份</span>，删除结果无法通过备份恢复`,
-      `VACUUM：会话库 ${rep.vacuum.cli_db === "ok" ? "✅" : "⚠️ " + esc(rep.vacuum.cli_db)} ·
-       任务索引 ${rep.vacuum.tasks_db === "ok" ? "✅" : "⚠️ " + esc(rep.vacuum.tasks_db)}`,
+      `VACUUM：会话库 ${rep.vacuum.cli_db === "ok" ? OK : WARNI + " " + esc(rep.vacuum.cli_db)} ·
+       任务索引 ${rep.vacuum.tasks_db === "ok" ? OK : WARNI + " " + esc(rep.vacuum.tasks_db)}`,
       `日志清洗：${rep.logs.files_washed} 个文件抹除 ${rep.logs.replacements} 处会话 ID` +
       (rep.logs.session_logs_deleted.length
         ? `，删除会话级日志 ${rep.logs.session_logs_deleted.length} 个` : ""),
@@ -438,7 +476,7 @@ async function openBackups() {
         el.querySelector("button").textContent = "恢复中…";
         try {
           await api("/api/restore", { ts: b.ts });
-          toast("✅ 已恢复备份 " + b.ts);
+          toast("已恢复备份 " + b.ts);
           $("#modal-backups").hidden = true;
           await Promise.all([loadState(), scan()]);
         } catch (e) {
@@ -456,9 +494,10 @@ async function openBackups() {
 /* ---------- 事件绑定 ---------- */
 function bind() {
   $("#btn-refresh").addEventListener("click", async () => {
-    toast("🔄 正在扫描…");
+    toast("正在扫描…");
     await Promise.all([loadState(), scan()]);
   });
+  $("#btn-help").addEventListener("click", () => { $("#modal-help").hidden = false; });
   $("#scope-seg").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-scope]");
     if (!btn) return;
