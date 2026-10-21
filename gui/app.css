@@ -447,6 +447,13 @@ details.reasoning .bubble {
 .confirm-body { font-size: 13.5px; line-height: 1.9; color: var(--text-2); padding: 12px 0 4px; }
 .confirm-body b { color: var(--text); }
 .confirm-body ul { margin: 6px 0 6px 18px; }
+.cf-backup {
+  margin-top: 10px; padding: 10px 14px; border-radius: 10px;
+  background: var(--chip); border: 1px solid var(--line);
+}
+.cf-backup .opt { font-size: 13px; color: var(--text); }
+.cf-backup-note { font-size: 11.5px; line-height: 1.6; margin: 4px 2px 0 22px; color: var(--text-3); }
+.cf-backup-note.off { color: var(--danger); }
 .warn {
   background: rgba(255, 159, 10, .12); color: var(--warn);
   font-size: 12.5px; border-radius: 10px; padding: 10px 14px; margin-top: 10px;

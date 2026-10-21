@@ -257,6 +257,17 @@ async function openPreview(id) {
 }
 
 /* ---------- 删除 ---------- */
+function renderBackupNote() {
+  const note = $("#cf-backup-note");
+  if ($("#opt-backup").checked) {
+    note.classList.remove("off");
+    note.innerHTML = `将备份两个数据库到<br><b>${esc(state.backupRoot || "~/.zcode-cleaner-backup/")}</b>，可在「备份与恢复」中还原`;
+  } else {
+    note.classList.add("off");
+    note.innerHTML = "⚠️ 不备份直接删除：删除完成后无法通过备份恢复";
+  }
+}
+
 function confirmDelete() {
   const sel = state.sessions.filter((s) => state.selected.has(s.id));
   if (!sel.length) return;
@@ -266,21 +277,26 @@ function confirmDelete() {
     <ul>${sel.slice(0, 8).map((s) => `<li>${esc(s.title)} <span style="color:var(--text-3)">${esc(s.id.slice(0, 24))}…</span></li>`).join("")}
     ${sel.length > 8 ? `<li>…等共 ${sel.length} 项</li>` : ""}</ul>
     删除范围：消息正文（12 张表）· 任务索引 · agents/exec/artifacts 会话产物 ·
-    rollout 模型日志 · debug 副本 · 日志明文清洗 · WAL checkpoint + VACUUM。<br>
-    删除前会自动备份两个数据库到<br><b>${esc(state.backupRoot || "~/.zcode-cleaner-backup/")}</b>`;
+    rollout 模型日志 · debug 副本 · 日志明文清洗 · WAL checkpoint + VACUUM。`;
+  $("#opt-backup").checked = true;   // 每次打开默认勾选，安全优先
+  renderBackupNote();
   $("#cf-running").hidden = !state.running;
   $("#modal-confirm").hidden = false;
 }
 
 async function doDelete() {
+  const backup = $("#opt-backup").checked;
   $("#modal-confirm").hidden = true;
-  $("#pg-text").textContent = "正在删除（含备份 / VACUUM / 日志清洗，可能需要几十秒）…";
+  $("#pg-text").textContent = backup
+    ? "正在删除（含备份 / VACUUM / 日志清洗，可能需要几十秒）…"
+    : "正在删除（无备份 / VACUUM / 日志清洗，可能需要几十秒）…";
   $("#modal-progress").hidden = false;
   try {
     const ids = [...state.selected];
     const rep = await api("/api/delete", {
       ids,
       purge_checkpoints: $("#opt-purge-cp").checked,
+      backup,
     });
     $("#modal-progress").hidden = true;
     const okN = rep.results.filter((r) => r.ok).length;
@@ -288,7 +304,9 @@ async function doDelete() {
       `<span class="${rep.failed ? "report-fail" : "report-ok"}">
         成功 ${okN} / ${rep.results.length}</span> 个会话，
       共 ${rep.total_msgs} 条消息，释放 ${fmtSize(rep.total_freed)}。`,
-      `备份：<b>${esc(rep.backup.ts)}</b>（可在「备份与恢复」中还原）`,
+      rep.backup
+        ? `备份：<b>${esc(rep.backup.ts)}</b>（可在「备份与恢复」中还原）`
+        : `<span class="report-fail">本次未备份</span>，删除结果无法通过备份恢复`,
       `VACUUM：会话库 ${rep.vacuum.cli_db === "ok" ? "✅" : "⚠️ " + esc(rep.vacuum.cli_db)} ·
        任务索引 ${rep.vacuum.tasks_db === "ok" ? "✅" : "⚠️ " + esc(rep.vacuum.tasks_db)}`,
       `日志清洗：${rep.logs.files_washed} 个文件抹除 ${rep.logs.replacements} 处会话 ID` +
@@ -393,6 +411,7 @@ function bind() {
     renderList();
   });
   $("#btn-delete").addEventListener("click", confirmDelete);
+  $("#opt-backup").addEventListener("change", renderBackupNote);
   $("#cf-ok").addEventListener("click", doDelete);
   $("#btn-preview-sel").addEventListener("click", () => {
     const first = [...state.selected][0];

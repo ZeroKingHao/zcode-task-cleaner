@@ -14,7 +14,7 @@ API:
   GET  /api/state           存储位置 / 客户端运行状态
   GET  /api/scan            全量扫描会话清单
   POST /api/preview         {id} 查看完整对话文本
-  POST /api/delete          {ids, purge_checkpoints} 备份+硬删除+VACUUM+日志清洗
+  POST /api/delete          {ids, purge_checkpoints, backup} 硬删除+VACUUM+日志清洗（backup=false 跳过备份）
   GET  /api/backups         备份列表
   POST /api/restore         {ts} 从备份还原两个数据库
 """
@@ -263,14 +263,16 @@ def vacuum_db(path, report, key):
                 pass
 
 
-def delete_sessions(ids, purge_checkpoints):
-    """完整删除管线，返回报告。失败条目不影响其余条目，列表状态以报告为准。"""
+def delete_sessions(ids, purge_checkpoints, backup=True):
+    """完整删除管线，返回报告。失败条目不影响其余条目，列表状态以报告为准。
+    backup=False 时不做删除前备份（不可恢复，由前端确认弹窗明确告知）。"""
     report = {
         "backup": None, "results": [], "vacuum": {},
         "logs": None, "checkpoints": [],
         "total_msgs": 0, "total_freed": 0, "failed": 0,
     }
-    report["backup"] = make_backup()
+    if backup:
+        report["backup"] = make_backup()
 
     projects = set()
     for sid in ids:
@@ -411,7 +413,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not ids:
                     return self._send(400, {"error": "未选择任何会话"})
                 with _state_lock:
-                    self._send(200, delete_sessions(ids, bool(body.get("purge_checkpoints"))))
+                    self._send(200, delete_sessions(
+                        ids, bool(body.get("purge_checkpoints")),
+                        bool(body.get("backup", True))))
             elif path == "/api/restore":
                 with _state_lock:
                     self._send(200, restore_backup(body["ts"]))

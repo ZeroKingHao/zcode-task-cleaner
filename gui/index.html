@@ -112,6 +112,11 @@
     <div class="modal-box dialog-box">
       <div class="modal-title">确认彻底删除？</div>
       <div class="confirm-body" id="cf-body"></div>
+      <div class="cf-backup">
+        <label class="opt"><input type="checkbox" id="opt-backup" checked>
+          删除前备份数据库（推荐）</label>
+        <div class="cf-backup-note" id="cf-backup-note"></div>
+      </div>
       <div class="warn" id="cf-running" hidden>⚠️ 检测到 ZCode 客户端正在运行，建议先完全退出再删除，避免客户端把内存数据写回。</div>
       <div class="modal-foot">
         <button class="btn ghost" data-close>取消</button>
