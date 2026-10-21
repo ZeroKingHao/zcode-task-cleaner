@@ -118,14 +118,16 @@ async function loadState() {
     state.protectMinutes = st.protect_minutes;
     state.backupRoot = st.backup_root;
     const pill = $("#running-pill");
-    pill.textContent = st.running ? "● 客户端运行中" : "● 客户端未运行";
+    pill.textContent = st.running ? "客户端运行中" : "客户端未运行";
     pill.className = "pill " + (st.running ? "bad" : "ok");
     pill.title = st.running
       ? "建议删除前完全退出客户端，避免数据被写回"
       : "客户端未运行，可以安全操作";
+    const pm = $("#protect-min");
+    if (pm) pm.textContent = st.protect_minutes;
   } catch (e) {
     const pill = $("#running-pill");
-    pill.textContent = "● 状态未知"; pill.className = "pill";
+    pill.textContent = "状态未知"; pill.className = "pill";
   }
 }
 
@@ -149,11 +151,71 @@ async function scan() {
 
 function renderStats() {
   const s = state.sessions;
+  const active = s.filter((x) => !x.archived && !x.deleted);
+  const archived = s.filter((x) => x.archived && !x.deleted);
+  const deleted = s.filter((x) => x.deleted);
+  const bytes = [active, archived, deleted].map((rows) =>
+    rows.reduce((a, x) => a + (x.size || 0), 0));
+  const totalBytes = bytes.reduce((a, b) => a + b, 0);
+
   countUp($("#st-total"), s.length, (n) => n);
-  countUp($("#st-active"), s.filter((x) => !x.archived && !x.deleted).length, (n) => n);
-  countUp($("#st-archived"), s.filter((x) => x.archived && !x.deleted).length, (n) => n);
-  countUp($("#st-deleted"), s.filter((x) => x.deleted).length, (n) => n);
-  countUp($("#st-size"), s.reduce((a, x) => a + x.size, 0), fmtSize);
+  countUp($("#st-active"), active.length, (n) => n);
+  countUp($("#st-archived"), archived.length, (n) => n);
+  countUp($("#st-deleted"), deleted.length, (n) => n);
+  countUp($("#st-size"), totalBytes, fmtSize);
+  const vaultCount = $("#vault-count");
+  if (vaultCount) countUp(vaultCount, s.length, (n) => n);
+
+  const claimBytes = bytes[1] + bytes[2];
+  const claimCount = archived.length + deleted.length;
+  countUp($("#reclaim-size"), claimBytes, fmtSize);
+  countUp($("#reclaim-count"), claimCount, (n) => n);
+  const claimPct = $("#reclaim-pct");
+  if (claimPct) {
+    claimPct.textContent = (totalBytes ? Math.round((claimBytes / totalBytes) * 100) : 0) + "%";
+  }
+  const claimCard = $("#reclaim");
+  if (claimCard) {
+    claimCard.style.setProperty("--reclaim",
+      (totalBytes ? (claimBytes / totalBytes) * 100 : 0) + "%");
+  }
+
+  // 范围行底部细条：按会话数占比
+  const shares = {
+    all: s.length ? 100 : 0,
+    active: s.length ? (active.length / s.length) * 100 : 0,
+    archived: s.length ? (archived.length / s.length) * 100 : 0,
+    deleted: s.length ? (deleted.length / s.length) * 100 : 0,
+  };
+  $$("#scope-seg button").forEach((b) => {
+    b.style.setProperty("--share", shares[b.dataset.scope].toFixed(2) + "%");
+  });
+
+  renderVaultRing(bytes);
+}
+
+/* 存储环按文件占用分段：活跃 / 归档 / 已删 */
+function renderVaultRing(bytes) {
+  const total = bytes.reduce((a, b) => a + b, 0);
+  const segs = [
+    [".seg-active", bytes[0]],
+    [".seg-archived", bytes[1]],
+    [".seg-deleted", bytes[2]],
+  ];
+  let offset = 0;
+  for (const [sel, val] of segs) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    const share = total ? (val / total) * 100 : 0;
+    const len = share > 0 ? Math.max(share - 1.1, 0.8) : 0;
+    el.style.strokeDasharray = `${len} ${100 - len}`;
+    el.style.strokeDashoffset = `${-offset}`;
+    offset += share;
+  }
+  const ring = $("#vault-ring");
+  if (!ring) return;
+  const pct = (v) => (total ? Math.round((v / total) * 100) + "%" : "0%");
+  ring.title = `按占用空间 · 活跃 ${pct(bytes[0])} / 归档 ${pct(bytes[1])} / 已删 ${pct(bytes[2])}`;
 }
 
 function visibleSessions() {
@@ -195,7 +257,7 @@ function avatarHtml(project) {
   let h = 0;
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const color = AVATAR_COLORS[h % AVATAR_COLORS.length];
-  return `<div class="avatar" style="background:${color}">${esc(name[0] || "?").toUpperCase()}</div>`;
+  return `<div class="avatar" style="background-color:${color}">${esc(name[0] || "?").toUpperCase()}</div>`;
 }
 
 /* 子代理类型 → 图标 / 徽章 */
@@ -253,11 +315,11 @@ function renderList() {
           <span class="s-title" title="${esc(s.title)}">${esc(s.title)}</span>
           ${badgeHtml(s)}
         </div>
-        <div class="s-sub">${esc(proj)} &nbsp;<span class="sid" title="${esc(s.id)}">${esc(shortId(s.id))}</span></div>
+        <div class="s-sub"><span class="s-proj">${esc(proj)}</span><span class="s-dot">·</span><span class="sid" title="${esc(s.id)}">${esc(shortId(s.id))}</span></div>
       </div>
-      <div class="s-col n">${s.msgs}</div>
-      <div class="s-col t">${fmtTime(s.updated_at)}</div>
-      <div class="s-col n">${fmtSize(s.size)}</div>
+      <div class="s-col n c-msgs">${s.msgs}</div>
+      <div class="s-col t c-time">${fmtTime(s.updated_at)}</div>
+      <div class="s-col n c-size">${fmtSize(s.size)}</div>
       <button class="btn-eye" data-preview="${esc(s.id)}">${icon("eye", 13)}<span>预览</span></button>`;
     el.querySelector("input").addEventListener("change", (e) => {
       e.target.checked ? state.selected.add(s.id) : state.selected.delete(s.id);
@@ -286,9 +348,9 @@ function renderList() {
             <span class="badge child-badge" title="挂在主会话下，删除主会话时一并删除">${meta.label}</span>
           </div>
         </div>
-        <div class="s-col n">${c.msgs}</div>
-        <div class="s-col t">${fmtTime(c.updated_at)}</div>
-        <div class="s-col n">${fmtSize(c.size)}</div>
+        <div class="s-col n c-msgs">${c.msgs}</div>
+        <div class="s-col t c-time">${fmtTime(c.updated_at)}</div>
+        <div class="s-col n c-size">${fmtSize(c.size)}</div>
         <button class="btn-eye" data-preview="${esc(c.id)}">${icon("eye", 13)}<span>预览</span></button>`;
       cel.querySelector(".btn-eye").addEventListener("click", () => openPreview(c.id));
       list.appendChild(cel);
@@ -301,6 +363,11 @@ function renderList() {
     ? `<b>${rows.length}</b> 个会话 · <b>${totalMsgs}</b> 条消息 · <b>${fmtSize(totalSize)}</b>`
     : "";
   $("#empty").hidden = rows.length > 0;
+  const end = $("#list-end");
+  if (end) {
+    end.hidden = rows.length === 0;
+    end.textContent = rows.length ? `已显示全部 ${rows.length} 个会话` : "";
+  }
   if (!rows.length) {
     $("#empty-text").textContent = state.sessions.length
       ? "没有符合条件的会话（换个筛选条件试试）"
@@ -502,7 +569,10 @@ function bind() {
     const btn = e.target.closest("button[data-scope]");
     if (!btn) return;
     state.scope = btn.dataset.scope;
-    $$("#scope-seg button").forEach((b) => b.classList.toggle("on", b === btn));
+    $$("#scope-seg button").forEach((b) => {
+      b.classList.toggle("on", b === btn);
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
     renderList();
   });
   $$(".chip[data-quick]").forEach((chip) => {

@@ -95,7 +95,7 @@ def main():
         page.wait_for_timeout(250)
         check("恢复时间降序", "刚刚活跃" in page.locator(".session:not(.child)").first.text_content())
 
-        # ---- 1c. 冻结窗格：下滑时「全选/摘要、使用说明、表头」三行整体吸顶 ----
+        # ---- 1c. 冻结窗格：表头固定，行区域独立滚动 ----
         print("\n[1c] 冻结窗格")
         check("头部两行结构", page.locator("#list-head .lh-tools").count() == 1
               and page.locator("#list-head .lh-cols").count() == 1)
@@ -105,9 +105,9 @@ def main():
         page.wait_for_timeout(300)
         tops = page.evaluate("""() => ({
             scrolled: document.querySelector('.list-wrap').scrollTop,
-            wrap: document.querySelector('.list-wrap').getBoundingClientRect().top,
+            shell: document.querySelector('.list-shell').getBoundingClientRect().top,
             head: document.querySelector('#list-head').getBoundingClientRect().top })""")
-        check("下滑后头部仍吸顶", tops["scrolled"] > 50 and abs(tops["head"] - tops["wrap"]) < 2,
+        check("下滑后头部仍固定", tops["scrolled"] > 50 and abs(tops["head"] - tops["shell"]) < 2,
               str(tops))
         page.screenshot(path=os.path.join(SHOTS, "01c-frozen.png"))
         page.set_viewport_size({"width": 1280, "height": 860})
