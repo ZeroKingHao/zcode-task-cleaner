@@ -9,6 +9,7 @@
 import json
 import os
 import re
+import sqlite3
 import sys
 import urllib.request
 
@@ -60,6 +61,54 @@ def main():
             "#scope-seg button[data-scope=deleted]").get_attribute("title"))
         page.screenshot(path=os.path.join(SHOTS, "01-light.png"), full_page=True)
 
+        # ---- 1b. 表头与排序 ----
+        print("\n[1b] 表头与排序")
+        head = page.text_content("#list-head")
+        check("表头-四列齐全", all(k in head for k in
+              ("标题", "消息数", "最后更新时间", "内存占用")))
+        check("默认按更新时间降序", "刚刚活跃" in page.locator(".session:not(.child)").first.text_content())
+        check("默认排序列高亮", "updated_at" in page.locator(
+            "#list-head .th-sort.on").get_attribute("data-sort"))
+        page.click('.th-sort[data-sort=msgs]')          # 消息数降序：aa11(10 条) 第一
+        page.wait_for_timeout(250)
+        check("消息数降序-最多在前", "编写 PRD" in page.locator(".session:not(.child)").first.text_content())
+        page.click('.th-sort[data-sort=msgs]')          # 切升序：aa11 最少排最后
+        page.wait_for_timeout(250)
+        check("消息数升序-最多在后", "编写 PRD" in page.locator(".session:not(.child)").last.text_content())
+        page.click('.th-sort[data-sort=updated_at]')    # 切到时间列（默认降序）
+        page.click('.th-sort[data-sort=updated_at]')    # 再点切升序：cc33(60 天) 第一
+        page.wait_for_timeout(250)
+        check("时间升序-最旧在前", "旧需求整理" in page.locator(".session:not(.child)").first.text_content())
+        check("升序箭头", "▲" in page.locator('.th-sort[data-sort=updated_at]').text_content())
+        page.click('.th-sort[data-sort=title]')         # 标题拼音升序：别的(bié) < demo-app(d) < …修复(xiū)
+        page.wait_for_timeout(250)
+        rows_t = page.locator(".session:not(.child)")
+        check("标题拼音排序", "别的项目" in rows_t.first.text_content()
+              and "修复登录" in rows_t.last.text_content())
+        page.click('.th-sort[data-sort=updated_at]')    # 恢复默认：时间降序
+        page.wait_for_timeout(250)
+        check("恢复时间降序", "刚刚活跃" in page.locator(".session:not(.child)").first.text_content())
+
+        # ---- 1c. 冻结窗格：下滑时「全选/摘要、使用说明、表头」三行整体吸顶 ----
+        print("\n[1c] 冻结窗格")
+        check("头部三行结构", page.locator("#list-head .lh-tools").count() == 1
+              and page.locator("#list-head .legend").count() == 1
+              and page.locator("#list-head .lh-cols").count() == 1)
+        page.set_viewport_size({"width": 1280, "height": 430})
+        page.wait_for_timeout(200)
+        page.evaluate("() => { document.querySelector('.list-wrap').scrollTop = 500; }")
+        page.wait_for_timeout(300)
+        tops = page.evaluate("""() => ({
+            scrolled: document.querySelector('.list-wrap').scrollTop,
+            wrap: document.querySelector('.list-wrap').getBoundingClientRect().top,
+            head: document.querySelector('#list-head').getBoundingClientRect().top })""")
+        check("下滑后头部仍吸顶", tops["scrolled"] > 50 and abs(tops["head"] - tops["wrap"]) < 2,
+              str(tops))
+        page.screenshot(path=os.path.join(SHOTS, "01c-frozen.png"))
+        page.set_viewport_size({"width": 1280, "height": 860})
+        page.evaluate("() => { document.querySelector('.list-wrap').scrollTop = 0; }")
+        page.wait_for_timeout(200)
+
         # ---- 2. 作用域过滤 ----
         print("\n[2] 作用域过滤")
         page.click("#scope-seg button[data-scope=deleted]")
@@ -91,6 +140,49 @@ def main():
         page.click("#qf-clear")
         page.wait_for_timeout(200)
         check("清除筛选=5 行", page.locator(".session").count() == 5)
+
+        # ---- 4b. 子代理展开/折叠 ----
+        print("\n[4b] 子代理展开/折叠")
+        mains = lambda: page.locator(".session:not(.child)")
+        aa = page.locator('.session:not(.child)', has_text="编写 PRD 文档")
+        check("有子代理的行显示展开箭头", aa.locator(".s-toggle:not(.placeholder)").count() == 1)
+        dd = page.locator('.session:not(.child)', has_text="别的项目")
+        check("无子代理的行箭头为占位", dd.locator(".s-toggle.placeholder").count() == 1)
+        check("初始无子代理行", page.locator(".session.child").count() == 0)
+        aa.locator(".s-toggle").click()
+        page.wait_for_timeout(300)
+        kids = page.locator(".session.child")
+        check("展开后 3 个子代理行", kids.count() == 3)
+        check("子代理行显示 sessionId",
+              "sess_subagent_agent_11111111" in kids.first.text_content())
+        check("徽章区分子代理/工作流",
+              "子代理" in kids.first.text_content()
+              and "工作流" in page.locator('.session.child', has_text="workflow").text_content())
+        check("子代理行无复选框（随主会话删除）",
+              kids.first.locator("input[type=checkbox]").count() == 0)
+        # 列对齐：主行与子行的消息/更新/占用列 x 坐标必须完全一致（grid 同模板）
+        xs = page.evaluate("""() => [...document.querySelectorAll('.session')].map(
+            r => Math.round(r.children[3].getBoundingClientRect().x))""")
+        check("消息列所有行严格对齐", len(set(xs)) == 1, str(xs))
+        page.screenshot(path=os.path.join(SHOTS, "01b-subagents.png"), full_page=True)
+        kids.first.locator(".btn-eye").click()      # 子代理也可预览
+        page.wait_for_selector("#modal-preview:not([hidden])")
+        page.wait_for_timeout(400)
+        check("子代理预览标题带主会话名",
+              "子代理 · " in page.text_content("#pv-title")
+              and "编写 PRD" in page.text_content("#pv-title"))
+        check("子代理预览有内容", "[user]" in page.text_content("#pv-chat"))
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(250)
+        aa.locator(".s-toggle").click()
+        page.wait_for_timeout(300)
+        check("再点折叠收起", page.locator(".session.child").count() == 0)
+        page.fill("#search", "sess_subagent_agent_1111")
+        page.wait_for_timeout(400)
+        check("搜索子代理 ID 命中主会话行",
+              mains().count() == 1 and "编写 PRD" in mains().first.text_content())
+        page.fill("#search", "")
+        page.wait_for_timeout(400)
 
         # ---- 5. 预览 ----
         print("\n[5] 内容预览")
@@ -126,6 +218,7 @@ def main():
         page.wait_for_selector("#modal-confirm:not([hidden])")
         page.wait_for_timeout(450)   # 等入场动画（0.28s）完成再截图
         check("确认框列出会话", "编写 PRD 文档" in page.text_content("#cf-body"))
+        check("确认框说明连带删除子代理", "3 个子代理" in page.text_content("#cf-body"))
         check("确认框说明删除范围", "VACUUM" in page.text_content("#cf-body"))
         check("备份选项默认勾选", page.is_checked("#opt-backup"))
         check("勾选备份显示还原说明", "备份与恢复" in page.text_content("#cf-backup-note"))
@@ -152,8 +245,9 @@ def main():
         page.wait_for_selector("#modal-report:not([hidden])", timeout=60000)
         page.wait_for_timeout(300)
         body = page.text_content("#rp-body")
-        check("报告-2 个成功", "成功 2 / 2" in body)
-        check("报告-消息数 6", "6 条消息" in body)
+        check("报告-2 个主会话成功", "成功 2 / 2" in body)
+        check("报告-消息数 12（主 6 + 子代理 6）", "12 条消息" in body)
+        check("报告-连带删除 3 个子代理", "连带删除子代理会话 3 个" in body)
         check("报告-VACUUM 成功", body.count("✅") == 2)
         check("报告-日志清洗", "抹除" in body)
         check("报告-含备份时间戳", re.search(r"备份：\d{8}-\d{6}", body) is not None)
@@ -176,7 +270,14 @@ def main():
         check("agents 目录已删", not os.path.exists(os.path.join(cli, "agents", "sess_aa11-0000-0000-0000-000000000000")))
         log = open(os.path.join(cli, "log", "zcode-2026-08-30.jsonl"), encoding="utf-8").read()
         check("日志明文已清洗", "sess_aa11" not in log and "[cleaned]" in log)
+        check("子代理 ID 也被清洗", "sess_subagent_agent_1111" not in log)
         check("日志保留其他会话", "sess_dd44" in log)
+        cdb = os.path.join(cli, "db", "db.sqlite")
+        scon = sqlite3.connect(f"file:{cdb}?mode=ro", uri=True)
+        kids_left = scon.execute(
+            "SELECT COUNT(*) FROM session WHERE parent_id IS NOT NULL").fetchone()[0]
+        scon.close()
+        check("子代理会话行已连带删除", kids_left == 0, f"剩 {kids_left} 行")
         cp = os.path.join(SANDBOX, "data", ".zcode", "v2", "checkpoints", "hash0001")
         check("项目未清零-检查点保留", os.path.isdir(cp))
 
@@ -196,6 +297,9 @@ def main():
         page.wait_for_timeout(600)
         check("恢复后回到 5 行", page.locator(".session").count() == 5)
         check("恢复后统计卡=5", page.text_content("#st-total").strip() == "5")
+        scan = api("/api/scan")["sessions"]
+        aa_restored = next(s for s in scan if "PRD" in s["title"])
+        check("恢复后子代理随库还原", len(aa_restored["children"]) == 3)
         page.screenshot(path=os.path.join(SHOTS, "07-restored.png"), full_page=True)
 
         # ---- 11. 不备份直接删除 ----

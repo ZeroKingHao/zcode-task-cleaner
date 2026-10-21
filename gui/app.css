@@ -29,7 +29,7 @@
     0 8px 32px rgba(17, 26, 48, .10),
     inset 0 1px 0 var(--glass-highlight),
     inset 0 -1px 0 rgba(17, 26, 48, .05);
-  --list-head-bg: rgba(255, 255, 255, .74);
+  --list-head-bg: rgba(255, 255, 255, .92);
 }
 html[data-theme="dark"] {
   --bg: #16161a;
@@ -57,12 +57,14 @@ html[data-theme="dark"] {
   --glass-shadow:
     0 10px 36px rgba(0, 0, 0, .40),
     inset 0 1px 0 var(--glass-highlight);
-  --list-head-bg: rgba(40, 40, 46, .82);
+  --list-head-bg: rgba(40, 40, 46, .92);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 /* hidden 属性优先于任何 display 设定（弹窗/操作栏/空态都依赖它） */
 [hidden] { display: none !important; }
+/* 会话表：表头与每一行（含子代理行）共用同一列模板，保证各列上下对齐 */
+:root { --row-cols: 17px 36px minmax(0, 1fr) 64px 112px 78px 80px; }
 html, body { height: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
@@ -241,22 +243,43 @@ html[data-theme="dark"] body::after {
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
-  padding: 6px 0 10px; min-height: 0;
+  padding: 0 0 10px; min-height: 0;   /* 顶部 padding 会让 sticky 头部悬空 6px，吸顶必须为 0 */
 }
+/* 列表头部：全选/摘要、使用说明、表头三行整体冻结（sticky）在列表顶 */
 .list-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 18px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 2;
+  border-bottom: 1px solid var(--line);
   border-radius: 18px 18px 0 0;
   /* sticky 头部必须有底，否则滚动时会话行从下面穿透重叠 */
   background: var(--list-head-bg);
   backdrop-filter: blur(18px) saturate(1.8);
   -webkit-backdrop-filter: blur(18px) saturate(1.8);
 }
+.lh-row.lh-tools {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 18px 6px;
+}
+.lh-row.lh-cols {
+  display: grid; grid-template-columns: var(--row-cols);
+  column-gap: 12px; align-items: center;
+  padding: 5px 18px 8px;
+}
+.th-sort {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text-2);
+  padding: 2px 0; display: inline-flex; align-items: center; gap: 4px;
+  transition: color .15s;
+}
+.th-sort.ta-r { justify-content: flex-end; text-align: right; }
+.th-sort:hover { color: var(--text); }
+.th-sort.on { color: var(--accent); }
+.th-sort .arr { font-size: 9px; line-height: 1; min-width: 8px; }
+.th-sort .arr:empty { display: none; }   /* 非激活列不保留箭头占位，文字贴列右缘 */
 .legend {
   display: flex; flex-wrap: wrap; align-items: center;
   gap: 5px 16px;
   padding: 7px 18px;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   font-size: 11.5px; color: var(--text-3);
   background: transparent;
@@ -293,7 +316,8 @@ input[type=checkbox]:checked::after {
 }
 
 .session {
-  display: flex; align-items: center; gap: 12px;
+  display: grid; grid-template-columns: var(--row-cols);
+  column-gap: 12px; align-items: center;
   padding: 11px 18px; border-bottom: 1px solid var(--line);
   cursor: default; animation: fade-up .3s ease both;
   transition: background .15s;
@@ -302,11 +326,47 @@ input[type=checkbox]:checked::after {
 .session:last-child { border-bottom: none; }
 .session.protected input[type=checkbox] { visibility: hidden; }
 
-.s-main { flex: 1; min-width: 0; }
-.s-title-row { display: flex; align-items: center; gap: 8px; }
+/* 标题左侧的子代理展开/折叠箭头 */
+.s-toggle {
+  width: 18px; height: 18px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 6px; padding: 0;
+  background: transparent; color: var(--text-3); cursor: pointer;
+  transition: background .15s, color .15s, transform .18s ease;
+}
+.s-toggle:hover { background: var(--chip); color: var(--text); }
+.s-toggle svg { transition: transform .18s ease; }
+.s-toggle.open { color: var(--accent-2); }
+.s-toggle.open svg { transform: rotate(90deg); }
+.s-toggle.placeholder { visibility: hidden; }   /* 无子代理的行占位对齐 */
+
+/* 展开的子代理行：与主行同列模板，勾选框格留空、头像格放树形符号 */
+.session.child {
+  padding: 7px 18px; background: var(--chip);
+  animation: fade-up .22s ease both;
+}
+.session.child:hover { background: var(--glass-hover); }
+.session.child .c-branch {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden;
+}
+.session.child .c-sid {
+  font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+  color: var(--text-2); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; min-width: 0;
+}
+.session.child .child-badge {
+  background: rgba(94, 92, 230, .14); color: #7d7aff; flex: none;
+}
+.session.child .s-col .v { font-size: 12px; font-weight: 500; }
+.session.child .s-col .k { font-size: 10px; }
+.session.child .btn-eye { padding: 4px 9px; font-size: 11.5px; }
+
+.s-main { min-width: 0; }
+.s-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .s-title {
   font-weight: 600; font-size: 13.5px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; max-width: 420px;
+  overflow: hidden; text-overflow: ellipsis;
 }
 .badge {
   font-size: 10.5px; padding: 1.5px 8px; border-radius: 99px; font-weight: 600;
@@ -323,8 +383,7 @@ input[type=checkbox]:checked::after {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .s-sub .sid { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
-.s-meta { display: flex; gap: 22px; flex: none; text-align: right; }
-.s-col { min-width: 58px; }
+.s-col { text-align: right; }
 .s-col .v { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .s-col .k { font-size: 11px; color: var(--text-3); }
 .btn-eye {
@@ -503,5 +562,5 @@ details.reasoning .bubble {
 @media (max-width: 860px) {
   .stats { grid-template-columns: repeat(3, 1fr); }
   .search-wrap input { width: 160px; }
-  .s-title { max-width: 200px; }
+  :root { --row-cols: 17px 30px minmax(0, 1fr) 52px 92px 66px 70px; }
 }

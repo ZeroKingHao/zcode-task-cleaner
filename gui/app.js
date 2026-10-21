@@ -5,13 +5,16 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 const state = {
-  sessions: [],       // 全部会话
+  sessions: [],       // 全部会话（主会话，子代理挂在 children 里）
   scope: "all",
   quick: "",          // "" | completed | error | 30d
   search: "",
   selected: new Set(),
   running: false,
   protectMinutes: 60,
+  expanded: new Set(),   // 展开了子代理列表的主会话 id
+  sortKey: "updated_at", // 表头排序：title | msgs | updated_at | size
+  sortDesc: true,
 };
 
 /* ---------- 工具 ---------- */
@@ -128,7 +131,8 @@ function visibleSessions() {
     if (state.quick === "30d" && s.updated_at > now - 30 * 86400000) return false;
     if (kw && !(s.title.toLowerCase().includes(kw)
       || s.project.toLowerCase().includes(kw)
-      || s.id.toLowerCase().includes(kw))) return false;
+      || s.id.toLowerCase().includes(kw)
+      || (s.children || []).some((c) => c.id.toLowerCase().includes(kw)))) return false;
     return true;
   });
 }
@@ -157,13 +161,46 @@ function avatarHtml(project) {
   return `<div class="avatar" style="background:${color}">${esc(name[0] || "?").toUpperCase()}</div>`;
 }
 
+/* 子代理类型 → 图标 / 徽章 */
+function childMeta(c) {
+  return c.type === "workflow_child"
+    ? { icon: "⚙️", label: "工作流" }
+    : { icon: "🤖", label: "子代理" };
+}
+
+const CHEVRON_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 5l7 7-7 7"/></svg>`;
+
+/* ---------- 排序 ---------- */
+function sortRows(list) {
+  const k = state.sortKey;
+  return [...list].sort((a, b) => {
+    let c;
+    if (k === "title") c = a.title.localeCompare(b.title, "zh");
+    else c = (a[k] || 0) - (b[k] || 0);
+    return state.sortDesc ? -c : c;
+  });
+}
+
+function renderThead() {
+  $$("#list-head .th-sort").forEach((btn) => {
+    const on = btn.dataset.sort === state.sortKey;
+    btn.classList.toggle("on", on);
+    btn.querySelector(".arr").textContent = on ? (state.sortDesc ? "▼" : "▲") : "";
+  });
+}
+
 function renderList() {
   const list = $("#list");
   $$("#list .session").forEach((el) => el.remove());
-  const rows = visibleSessions();
+  const rows = sortRows(visibleSessions());
+  renderThead();
 
   rows.forEach((s, i) => {
     const proj = s.project.replace(/\\/g, "/").split("/").pop() || s.project;
+    const kids = s.children || [];
+    const open = state.expanded.has(s.id);
     const el = document.createElement("div");
     el.className = "session" + (s.protected ? " protected" : "");
     el.style.animationDelay = `${Math.min(i * 28, 320)}ms`;   // 逐行渐入
@@ -172,23 +209,53 @@ function renderList() {
       ${avatarHtml(s.project)}
       <div class="s-main">
         <div class="s-title-row">
+          ${kids.length
+        ? `<button class="s-toggle${open ? " open" : ""}" data-toggle="${esc(s.id)}"
+             title="包含 ${kids.length} 个子代理会话，点击${open ? "折叠" : "展开"}；删除主会话时将一并删除">${CHEVRON_SVG}</button>`
+        : `<span class="s-toggle placeholder"></span>`}
           <span class="s-title" title="${esc(s.title)}">${esc(s.title)}</span>
           ${badgeHtml(s)}
         </div>
         <div class="s-sub">${esc(proj)} &nbsp;<span class="sid">${esc(s.id)}</span></div>
       </div>
-      <div class="s-meta">
-        <div class="s-col"><div class="v">${s.msgs}</div><div class="k">消息</div></div>
-        <div class="s-col"><div class="v">${fmtTime(s.updated_at)}</div><div class="k">更新</div></div>
-        <div class="s-col"><div class="v">${fmtSize(s.size)}</div><div class="k">占用</div></div>
-      </div>
+      <div class="s-col"><div class="v">${s.msgs}</div><div class="k">消息</div></div>
+      <div class="s-col"><div class="v">${fmtTime(s.updated_at)}</div><div class="k">更新</div></div>
+      <div class="s-col"><div class="v">${fmtSize(s.size)}</div><div class="k">占用</div></div>
       <button class="btn-eye" data-preview="${esc(s.id)}">👁 预览</button>`;
     el.querySelector("input").addEventListener("change", (e) => {
       e.target.checked ? state.selected.add(s.id) : state.selected.delete(s.id);
       renderActionbar();
     });
+    const tg = el.querySelector("[data-toggle]");
+    if (tg) tg.addEventListener("click", () => {
+      state.expanded.has(s.id) ? state.expanded.delete(s.id) : state.expanded.add(s.id);
+      renderList();
+    });
     el.querySelector(".btn-eye").addEventListener("click", () => openPreview(s.id));
     list.appendChild(el);
+
+    // 展开的子代理行：只展示会话 ID 与基础信息，跟随主会话一起删除
+    if (open) kids.forEach((c) => {
+      const meta = childMeta(c);
+      const cel = document.createElement("div");
+      cel.className = "session child";
+      cel.innerHTML = `
+        <span></span>
+        <span class="c-branch">└ ${meta.icon}</span>
+        <div class="s-main">
+          <div class="s-title-row">
+            <span class="s-toggle placeholder"></span>
+            <span class="c-sid" title="${esc(c.id)}">${esc(c.id)}</span>
+            <span class="badge child-badge" title="挂在主会话下，删除主会话时一并删除">${meta.label}</span>
+          </div>
+        </div>
+        <div class="s-col"><div class="v">${c.msgs}</div><div class="k">消息</div></div>
+        <div class="s-col"><div class="v">${fmtTime(c.updated_at)}</div><div class="k">更新</div></div>
+        <div class="s-col"><div class="v">${fmtSize(c.size)}</div><div class="k">占用</div></div>
+        <button class="btn-eye" data-preview="${esc(c.id)}">👁 预览</button>`;
+      cel.querySelector(".btn-eye").addEventListener("click", () => openPreview(c.id));
+      list.appendChild(cel);
+    });
   });
 
   const totalMsgs = rows.reduce((a, s) => a + s.msgs, 0);
@@ -217,8 +284,17 @@ function renderActionbar() {
 }
 
 /* ---------- 预览 ---------- */
+function findSession(id) {
+  for (const s of state.sessions) {
+    if (s.id === id) return s;
+    const c = (s.children || []).find((c) => c.id === id);
+    if (c) return { id: c.id, title: `${childMeta(c).label} · ${s.title}`, project: s.project };
+  }
+  return null;
+}
+
 async function openPreview(id) {
-  const s = state.sessions.find((x) => x.id === id);
+  const s = findSession(id);
   $("#pv-title").textContent = s ? s.title : id;
   $("#pv-sub").textContent = `${s ? s.project + " · " : ""}${id} · 加载中…`;
   $("#pv-chat").innerHTML = "";
@@ -271,11 +347,15 @@ function renderBackupNote() {
 function confirmDelete() {
   const sel = state.sessions.filter((s) => state.selected.has(s.id));
   if (!sel.length) return;
+  const kidTotal = sel.reduce((a, s) => a + (s.children || []).length, 0);
+  const kidMsgs = sel.reduce((a, s) =>
+    a + (s.children || []).reduce((b, c) => b + c.msgs, 0), 0);
   $("#cf-body").innerHTML = `
     将彻底删除 <b>${sel.length}</b> 个会话（共 <b>${sel.reduce((a, s) => a + s.msgs, 0)}</b> 条消息，
     释放约 <b>${fmtSize(sel.reduce((a, s) => a + s.size, 0))}</b>）：
-    <ul>${sel.slice(0, 8).map((s) => `<li>${esc(s.title)} <span style="color:var(--text-3)">${esc(s.id.slice(0, 24))}…</span></li>`).join("")}
+    <ul>${sel.slice(0, 8).map((s) => `<li>${esc(s.title)} <span style="color:var(--text-3)">${esc(s.id.slice(0, 24))}…</span>${(s.children || []).length ? ` <span style="color:var(--text-3)">（含 ${(s.children || []).length} 个子代理）</span>` : ""}</li>`).join("")}
     ${sel.length > 8 ? `<li>…等共 ${sel.length} 项</li>` : ""}</ul>
+    ${kidTotal ? `<p>同时连带删除 <b>${kidTotal}</b> 个子代理会话（${kidMsgs} 条消息，随主会话一起清除）。</p>` : ""}
     删除范围：消息正文（12 张表）· 任务索引 · agents/exec/artifacts 会话产物 ·
     rollout 模型日志 · debug 副本 · 日志明文清洗 · WAL checkpoint + VACUUM。`;
   $("#opt-backup").checked = true;   // 每次打开默认勾选，安全优先
@@ -299,11 +379,14 @@ async function doDelete() {
       backup,
     });
     $("#modal-progress").hidden = true;
-    const okN = rep.results.filter((r) => r.ok).length;
+    const okN = rep.results.filter((r) => r.ok && !r.child).length;
+    const mainN = rep.results.filter((r) => !r.child).length;
+    const kidN = rep.results.filter((r) => r.ok && r.child).length;
     const lines = [
       `<span class="${rep.failed ? "report-fail" : "report-ok"}">
-        成功 ${okN} / ${rep.results.length}</span> 个会话，
+        成功 ${okN} / ${mainN}</span> 个会话，
       共 ${rep.total_msgs} 条消息，释放 ${fmtSize(rep.total_freed)}。`,
+      ...(kidN ? [`连带删除子代理会话 ${kidN} 个（消息数与释放空间已计入上表）`] : []),
       rep.backup
         ? `备份：<b>${esc(rep.backup.ts)}</b>（可在「备份与恢复」中还原）`
         : `<span class="report-fail">本次未备份</span>，删除结果无法通过备份恢复`,
@@ -408,6 +491,14 @@ function bind() {
   $("#check-all").addEventListener("change", (e) => {
     const vis = visibleSessions().filter((s) => !s.protected);
     vis.forEach((s) => e.target.checked ? state.selected.add(s.id) : state.selected.delete(s.id));
+    renderList();
+  });
+  $("#list-head").addEventListener("click", (e) => {
+    const btn = e.target.closest(".th-sort");
+    if (!btn) return;
+    const key = btn.dataset.sort;
+    if (state.sortKey === key) state.sortDesc = !state.sortDesc;
+    else { state.sortKey = key; state.sortDesc = key !== "title"; }  // 标题默认升序，数值/时间默认降序
     renderList();
   });
   $("#btn-delete").addEventListener("click", confirmDelete);

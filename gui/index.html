@@ -64,20 +64,32 @@
     </div>
   </section>
 
-  <!-- 会话清单 -->
+  <!-- 会话清单：全选/摘要、使用说明、表头三行整体冻结（sticky）在列表顶部 -->
   <main class="list-wrap">
-    <div class="list-head">
-      <label class="check-all"><input type="checkbox" id="check-all"> 全选</label>
-      <span class="list-summary" id="list-summary"></span>
-    </div>
-    <div class="legend">
-      <span class="legend-title">状态说明</span>
-      <span class="lg">无徽章 = 活跃，正常显示在客户端</span>
-      <span class="lg"><span class="badge completed">已完成</span>任务正常结束</span>
-      <span class="lg"><span class="badge error">已出错</span>任务以错误结束</span>
-      <span class="lg"><span class="badge archived">归档</span>客户端已归档，数据仍在磁盘</span>
-      <span class="lg"><span class="badge deleted">已删</span>客户端界面删过（仅隐藏，数据仍在磁盘）</span>
-      <span class="lg"><span class="badge using">使用中</span>最近 60 分钟活跃，已锁定防误删</span>
+    <div class="list-head" id="list-head">
+      <div class="lh-row lh-tools">
+        <label class="check-all"><input type="checkbox" id="check-all"> 全选</label>
+        <span class="list-summary" id="list-summary"></span>
+      </div>
+      <div class="legend">
+        <span class="legend-title">状态说明</span>
+        <span class="lg">无徽章 = 活跃，正常显示在客户端</span>
+        <span class="lg"><span class="badge completed">已完成</span>任务正常结束</span>
+        <span class="lg"><span class="badge error">已出错</span>任务以错误结束</span>
+        <span class="lg"><span class="badge archived">归档</span>客户端已归档，数据仍在磁盘</span>
+        <span class="lg"><span class="badge deleted">已删</span>客户端界面删过（仅隐藏，数据仍在磁盘）</span>
+        <span class="lg"><span class="badge using">使用中</span>最近 60 分钟活跃，已锁定防误删</span>
+        <span class="lg">▸ 标题左侧有箭头 = 含子代理会话，点开按 ID 查看，删除主会话时一并删除</span>
+      </div>
+      <div class="lh-row lh-cols">
+        <span></span>
+        <span></span>
+        <button class="th-sort" data-sort="title">标题<span class="arr"></span></button>
+        <button class="th-sort ta-r" data-sort="msgs">消息数<span class="arr"></span></button>
+        <button class="th-sort ta-r" data-sort="updated_at">最后更新时间<span class="arr"></span></button>
+        <button class="th-sort ta-r" data-sort="size">内存占用<span class="arr"></span></button>
+        <span></span>
+      </div>
     </div>
     <div class="list" id="list"></div>
     <div class="empty" id="empty" hidden>

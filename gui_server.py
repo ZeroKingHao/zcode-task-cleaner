@@ -35,6 +35,8 @@ from pathlib import Path
 GUI_DIR = Path(__file__).with_name("gui")
 PROTECT_MINUTES = 60            # 最近 N 分钟活跃的会话视为"使用中"，禁止删除
 MAX_WASH_SIZE = 256 * 1024 * 1024   # 超过此大小的日志文件跳过明文清洗
+# db.sqlite 中 session.task_type 标记的子会话：挂在主会话下展示，随主会话一并删除
+CHILD_TYPES = ("subagent_child", "workflow_child")
 
 # ---------------------------------------------------------------------------
 # 加载 CLI 核心模块（单一数据来源，避免两份删除逻辑漂移）
@@ -89,8 +91,23 @@ def session_size(sid):
     return size
 
 
+def child_session_ids(sid):
+    """主会话的子会话 id 列表（Agent 子代理 / 动态工作流节点）。"""
+    if not os.path.isfile(ztc.CLI_DB):
+        return []
+    con = sqlite3.connect(f"file:{ztc.CLI_DB}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            f"SELECT id FROM session WHERE parent_id=? AND task_type IN "
+            f"({','.join('?' * len(CHILD_TYPES))})",
+            (sid, *CHILD_TYPES)).fetchall()
+    finally:
+        con.close()
+    return [r[0] for r in rows]
+
+
 def scan_sessions():
-    """全量扫描：任务索引 ∪ 会话库。"""
+    """全量扫描：任务索引 ∪ 会话库。子代理会话不单独成行，挂到主会话的 children。"""
     con = sqlite3.connect(f"file:{TASKS_DB}?mode=ro", uri=True)
     tasks = con.execute(
         "SELECT task_id, title, workspace_path, task_status, archived, deleted,"
@@ -98,16 +115,31 @@ def scan_sessions():
     con.close()
 
     msgs = {}
+    children_by_parent = {}
     if os.path.isfile(ztc.CLI_DB):
         con = sqlite3.connect(f"file:{ztc.CLI_DB}?mode=ro", uri=True)
         msgs = dict(con.execute(
             "SELECT session_id, COUNT(*) FROM message GROUP BY session_id").fetchall())
+        for cid, pid, ttype, upd in con.execute(
+                "SELECT id, parent_id, task_type, time_updated FROM session"
+                " WHERE parent_id IS NOT NULL AND parent_id != ''"
+                f" AND task_type IN ({','.join('?' * len(CHILD_TYPES))})",
+                CHILD_TYPES):
+            children_by_parent.setdefault(pid, []).append((cid, ttype, upd or 0))
         con.close()
 
     now = time.time() * 1000
     result = []
     for tid, title, wp, status, arch, dele, pinned, created, upd in tasks:
         upd = upd or 0
+        children = []
+        for cid, ttype, cupd in sorted(children_by_parent.get(tid, []),
+                                       key=lambda c: -c[2]):
+            children.append({
+                "id": cid, "type": ttype, "updated_at": cupd,
+                "msgs": msgs.get(cid, 0), "size": session_size(cid),
+            })
+        # 消息数/占用合并子代理：删除主会话时它们会被一并删掉
         result.append({
             "id": tid,
             "title": (title or "").strip() or "(无标题)",
@@ -115,9 +147,10 @@ def scan_sessions():
             "status": status or "",
             "archived": bool(arch), "deleted": bool(dele), "pinned": bool(pinned),
             "created_at": created or 0, "updated_at": upd,
-            "msgs": msgs.get(tid, 0),
-            "size": session_size(tid),
+            "msgs": msgs.get(tid, 0) + sum(c["msgs"] for c in children),
+            "size": session_size(tid) + sum(c["size"] for c in children),
             "protected": (now - upd) / 60000 < PROTECT_MINUTES,
+            "children": children,
         })
     result.sort(key=lambda s: -s["updated_at"])
     return result
@@ -275,7 +308,10 @@ def delete_sessions(ids, purge_checkpoints, backup=True):
         report["backup"] = make_backup()
 
     projects = set()
+    wash_ids = []
     for sid in ids:
+        # 先查子代理（session 表还没删），删除主会话时一并硬删
+        targets = [(sid, False)] + [(c, True) for c in child_session_ids(sid)]
         con = None
         try:
             con = sqlite3.connect(f"file:{TASKS_DB}?mode=ro", uri=True)
@@ -285,15 +321,18 @@ def delete_sessions(ids, purge_checkpoints, backup=True):
             con = None
             if row and row[0]:
                 projects.add(row[0])
-            msgs, freed = ztc.hard_delete(sid, V2_DIR)
-            # CLI 核心不覆盖 debug 目录，这里补上
-            dbg = os.path.join(ztc.CLI_DIR, "debug", f"model-io-{sid}.jsonl")
-            if os.path.isfile(dbg):
-                freed += os.path.getsize(dbg)
-            report["results"].append(
-                {"id": sid, "ok": True, "msgs": msgs, "freed": freed})
-            report["total_msgs"] += msgs
-            report["total_freed"] += freed
+            for target, is_child in targets:
+                wash_ids.append(target)
+                msgs, freed = ztc.hard_delete(target, V2_DIR)
+                # CLI 核心不覆盖 debug 目录，这里补上
+                dbg = os.path.join(ztc.CLI_DIR, "debug", f"model-io-{target}.jsonl")
+                if os.path.isfile(dbg):
+                    freed += os.path.getsize(dbg)
+                report["results"].append(
+                    {"id": target, "ok": True, "msgs": msgs, "freed": freed,
+                     "child": is_child})
+                report["total_msgs"] += msgs
+                report["total_freed"] += freed
         except Exception as e:
             if con:
                 try:
@@ -301,9 +340,10 @@ def delete_sessions(ids, purge_checkpoints, backup=True):
                 except Exception:
                     pass
             report["failed"] += 1
-            report["results"].append({"id": sid, "ok": False, "error": str(e)})
+            report["results"].append(
+                {"id": sid, "ok": False, "error": str(e), "child": False})
 
-    report["logs"] = wash_logs(ids)
+    report["logs"] = wash_logs(wash_ids)
     vacuum_db(ztc.CLI_DB, report["vacuum"], "cli_db")
     vacuum_db(TASKS_DB, report["vacuum"], "tasks_db")
 

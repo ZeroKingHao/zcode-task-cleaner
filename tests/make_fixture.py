@@ -29,6 +29,17 @@ SEED = [
     ("ee55", r"G:\demo-app", "demo-app 刚刚活跃的会话", "completed", 0, 0, -10 * 60 * 1000, 2),
 ]
 
+# 子代理会话：(id, 挂靠的主会话 id 后缀, task_type, 消息数)
+# 只挂在 aa11 上，验证展开/折叠与连带删除；其余主会话无子代理
+CHILD_SEED = [
+    ("sess_subagent_agent_11111111-1111-4111-8111-111111111111", "aa11",
+     "subagent_child", 2),
+    ("sess_subagent_agent_22222222-2222-4222-8222-222222222222", "aa11",
+     "subagent_child", 2),
+    ("sess_subagent_workflow_33333333-3333-4333-8333-333333333333", "aa11",
+     "workflow_child", 2),
+]
+
 
 def build():
     if os.path.isdir(ROOT):
@@ -85,27 +96,40 @@ def build():
     CREATE TABLE tool_usage (session_id TEXT, tool_name TEXT);
     CREATE TABLE session_input (session_id TEXT, kind TEXT);
     CREATE TABLE session_task_link (parent_session_id TEXT, child_session_id TEXT);
-    CREATE TABLE session (id TEXT, title TEXT);
+    CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, parent_id TEXT,
+      task_type TEXT, time_updated INTEGER);
     """)
-    for suf, proj, title, status, arch, dele, upd_off, nmsgs in SEED:
-        sid = f"sess_{suf}-0000-0000-0000-000000000000"
+    def insert_messages(sid, title, upd_off, nmsgs, tag):
         for i in range(nmsgs):
             role = "user" if i % 2 == 0 else "assistant"
-            mid = f"msg-{suf}-{i}"
+            mid = f"msg-{tag}-{i}"
             con.execute("INSERT INTO message VALUES (?,?,?,?,?,?)",
                         (mid, sid, NOW + upd_off + i * 1000, NOW + upd_off + i * 1000,
                          json.dumps({"role": role, "time": NOW + upd_off}), i))
             con.execute("INSERT INTO part VALUES (?,?,?,?,?,?,?)",
-                        (f"part-{suf}-{i}-0", mid, sid, NOW, NOW,
+                        (f"part-{tag}-{i}-0", mid, sid, NOW, NOW,
                          json.dumps({"type": "text",
                                      "text": f"[{role}] {title} 第 {i + 1} 条消息：请帮我把侧边栏改成深色模式。"}), 0))
             if role == "assistant":
                 con.execute("INSERT INTO part VALUES (?,?,?,?,?,?,?)",
-                            (f"part-{suf}-{i}-1", mid, sid, NOW, NOW,
+                            (f"part-{tag}-{i}-1", mid, sid, NOW, NOW,
                              json.dumps({"type": "reasoning",
                                          "text": "用户想要修改样式，我需要先找到对应的组件文件…"}), 1))
-        con.execute("INSERT INTO session VALUES (?,?)", (sid, title))
+
+    for suf, proj, title, status, arch, dele, upd_off, nmsgs in SEED:
+        sid = f"sess_{suf}-0000-0000-0000-000000000000"
+        insert_messages(sid, title, upd_off, nmsgs, suf)
+        con.execute("INSERT INTO session VALUES (?,?,?,?,?)",
+                    (sid, title, None, "interactive", NOW + upd_off))
         con.execute("INSERT INTO todo VALUES (?,?)", (sid, "示例待办"))
+    # 子代理会话：挂在主会话下（GUI 里随主会话展开显示、连带删除）
+    for cid, psuf, ttype, nmsgs in CHILD_SEED:
+        ptitle = next(x[2] for x in SEED if x[0] == psuf)
+        insert_messages(cid, f"子代理-{ptitle}", -40 * DAY + 3600000, nmsgs,
+                        cid[-12:])
+        con.execute("INSERT INTO session VALUES (?,?,?,?,?)",
+                    (cid, f"子代理-{ptitle}", f"sess_{psuf}-0000-0000-0000-000000000000",
+                     ttype, NOW - 40 * DAY + 3600000))
     con.commit(); con.close()
 
     # ---- 会话磁盘文件（部分会话有，验证大小统计与删除）----
@@ -121,8 +145,9 @@ def build():
         with open(os.path.join(CLI, "debug", f"model-io-{sid}.jsonl"), "w", encoding="utf-8") as f:
             f.write(json.dumps({"session": sid, "debug": True}) + "\n" * 100)
 
-    # ---- 日志明文（含全部会话 ID，验证清洗）----
+    # ---- 日志明文（含全部会话 ID 与一个子代理 ID，验证清洗）----
     all_ids = [f"sess_{s[0]}-0000-0000-0000-000000000000" for s in SEED]
+    all_ids.append(CHILD_SEED[0][0])
     with open(os.path.join(CLI, "log", "zcode-2026-08-30.jsonl"), "w", encoding="utf-8") as f:
         for sid in all_ids:
             f.write(json.dumps({"ts": 1, "msg": f"session {sid} started"}) + "\n")
@@ -140,6 +165,8 @@ def build():
     print(f"  ZCODE_HOME={os.path.abspath(HOME)}")
     for suf, proj, title, *_ in SEED:
         print(f"  sess_{suf}…  {proj:<18} {title}")
+    for cid, psuf, ttype, _n in CHILD_SEED:
+        print(f"    └ {ttype:<15} 挂在 sess_{psuf}…  {cid}")
 
 
 if __name__ == "__main__":
